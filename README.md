@@ -1,7 +1,5 @@
 # Desafio-tecnico-Devops-2026
 
-# DevOps Challenge 2025
-
 Este repositório documenta a evolução de uma infraestrutura DevOps construída em três cenários progressivos — do básico ao Kubernetes com GitOps.
 
 ---
