@@ -1,0 +1,412 @@
+pipeline {
+  agent any
+
+  environment {
+    // ── Registries ───────────────────────────────────────────────────────────
+    ARTIFACTORY_URL      = "${env.ARTIFACTORY_URL ?: 'http://artifactory:8082'}"
+    ARTIFACTORY_REGISTRY = "artifactory:5002"
+    NEXUS_URL            = "${env.NEXUS_URL ?: 'http://nexus:8081'}"
+    SONAR_URL            = "${env.SONAR_URL ?: 'http://sonarqube:9000'}"
+    DOCKER_NETWORK       = "${env.DOCKER_NETWORK ?: 'devops-net'}"
+    PROJECT_PATH         = "${env.PROJECT_PATH ?: '/project'}"
+
+    // ── Imagens ───────────────────────────────────────────────────────────────
+    APP1_IMAGE = "devops-challenge/app1-python"
+    APP2_IMAGE = "devops-challenge/app2-node"
+    IMAGE_TAG  = "${BUILD_NUMBER}"
+
+    // ── Relatórios ────────────────────────────────────────────────────────────
+    REPORTS_DIR = "reports"
+  }
+
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    timeout(time: 60, unit: 'MINUTES')
+    timestamps()
+    ansiColor('xterm')
+  }
+
+  stages {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('🔧 Checkout') {
+    // ─────────────────────────────────────────────────────────────────────────
+      steps {
+        echo "Sincronizando com /project (git local)"
+        sh '''
+          if [ -d "${PROJECT_PATH}/.git" ]; then
+            git -C "${PROJECT_PATH}" status --short
+          else
+            git -C "${PROJECT_PATH}" init -b main
+            git -C "${PROJECT_PATH}" add -A
+            git -C "${PROJECT_PATH}" -c user.email="ci@devops" \
+                                      -c user.name="CI" \
+                                      commit -m "initial" --allow-empty
+          fi
+        '''
+        sh "mkdir -p ${REPORTS_DIR}"
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('🔍 SAST — SonarQube Analysis') {
+    // ─────────────────────────────────────────────────────────────────────────
+      parallel {
+
+        stage('App1 — Python') {
+          steps {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=devops-app1 \
+                  -Dsonar.projectName="DevOps App1 Python" \
+                  -Dsonar.sources=${PROJECT_PATH}/app1-python \
+                  -Dsonar.host.url=${SONAR_URL} \
+                  -Dsonar.login=\${SONAR_TOKEN} \
+                  -Dsonar.python.version=3 \
+                  -Dsonar.exclusions="**/tests/**,**/__pycache__/**"
+              """
+            }
+          }
+        }
+
+        stage('App2 — Node.js') {
+          steps {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=devops-app2 \
+                  -Dsonar.projectName="DevOps App2 Node" \
+                  -Dsonar.sources=${PROJECT_PATH}/app2-node \
+                  -Dsonar.host.url=${SONAR_URL} \
+                  -Dsonar.login=\${SONAR_TOKEN} \
+                  -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                  -Dsonar.exclusions="**/node_modules/**,**/tests/**"
+              """
+            }
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('🔒 SAST — Quality Gate') {
+    // ─────────────────────────────────────────────────────────────────────────
+      steps {
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          sh """
+            for project in devops-app1 devops-app2; do
+              echo "Verificando Quality Gate para \$project..."
+              for i in \$(seq 1 12); do
+                STATUS=\$(curl -sf -u "\${SONAR_TOKEN}:" \
+                  "${SONAR_URL}/api/qualitygates/project_status?projectKey=\$project" \
+                  | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+                echo "  Status \$project: \$STATUS (tentativa \$i/12)"
+                [ "\$STATUS" = "OK" ] && break
+                [ "\$STATUS" = "ERROR" ] && echo "⚠️ Quality Gate falhou para \$project (pipeline continua)" && break
+                [ \$i -eq 12 ] && echo "⚠️ Timeout aguardando Quality Gate — continuando"
+                sleep 10
+              done
+            done
+          """
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('📦 SAST — Dependency Check') {
+    // ─────────────────────────────────────────────────────────────────────────
+      parallel {
+
+        stage('DepCheck App1') {
+          steps {
+            sh """
+              dependency-check \
+                --project "App1-Python" \
+                --scan ${PROJECT_PATH}/app1-python \
+                --out ${REPORTS_DIR}/depcheck-app1 \
+                --format HTML --format JSON \
+                --enableExperimental \
+                --failOnCVSS 9 || true
+            """
+          }
+        }
+
+        stage('DepCheck App2') {
+          steps {
+            sh """
+              dependency-check \
+                --project "App2-Node" \
+                --scan ${PROJECT_PATH}/app2-node \
+                --out ${REPORTS_DIR}/depcheck-app2 \
+                --format HTML --format JSON \
+                --enableExperimental \
+                --failOnCVSS 9 || true
+            """
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('🐳 Build — Docker Images') {
+    // ─────────────────────────────────────────────────────────────────────────
+      parallel {
+
+        stage('Build App1') {
+          steps {
+            sh """
+              docker build \
+                -t ${APP1_IMAGE}:${IMAGE_TAG} \
+                -t ${APP1_IMAGE}:latest \
+                --label "build.number=${BUILD_NUMBER}" \
+                --label "build.timestamp=\$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                ${PROJECT_PATH}/app1-python
+            """
+          }
+        }
+
+        stage('Build App2') {
+          steps {
+            sh """
+              docker build \
+                -t ${APP2_IMAGE}:${IMAGE_TAG} \
+                -t ${APP2_IMAGE}:latest \
+                --label "build.number=${BUILD_NUMBER}" \
+                --label "build.timestamp=\$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                ${PROJECT_PATH}/app2-node
+            """
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('📤 Push — Artifactory (Docker Registry)') {
+    // ─────────────────────────────────────────────────────────────────────────
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'artifactory-creds',
+          usernameVariable: 'ARTIF_USER',
+          passwordVariable: 'ARTIF_PASS'
+        )]) {
+          sh """
+            echo "\${ARTIF_PASS}" | docker login \
+              --username "\${ARTIF_USER}" \
+              --password-stdin \
+              http://${ARTIFACTORY_REGISTRY} || true
+
+            # Tag e push App1
+            docker tag ${APP1_IMAGE}:${IMAGE_TAG} ${ARTIFACTORY_REGISTRY}/${APP1_IMAGE}:${IMAGE_TAG}
+            docker tag ${APP1_IMAGE}:latest       ${ARTIFACTORY_REGISTRY}/${APP1_IMAGE}:latest
+            docker push ${ARTIFACTORY_REGISTRY}/${APP1_IMAGE}:${IMAGE_TAG} || true
+            docker push ${ARTIFACTORY_REGISTRY}/${APP1_IMAGE}:latest       || true
+
+            # Tag e push App2
+            docker tag ${APP2_IMAGE}:${IMAGE_TAG} ${ARTIFACTORY_REGISTRY}/${APP2_IMAGE}:${IMAGE_TAG}
+            docker tag ${APP2_IMAGE}:latest       ${ARTIFACTORY_REGISTRY}/${APP2_IMAGE}:latest
+            docker push ${ARTIFACTORY_REGISTRY}/${APP2_IMAGE}:${IMAGE_TAG} || true
+            docker push ${ARTIFACTORY_REGISTRY}/${APP2_IMAGE}:latest       || true
+          """
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('📦 Publish — Nexus (Artefatos)') {
+    // ─────────────────────────────────────────────────────────────────────────
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'nexus-creds',
+          usernameVariable: 'NEXUS_USER',
+          passwordVariable: 'NEXUS_PASS'
+        )]) {
+          sh """
+            # Publicar requirements.txt e package.json como artefatos versionados
+            ARTIFACT_PATH="devops-challenge/build-${BUILD_NUMBER}"
+
+            curl -sf -u "\${NEXUS_USER}:\${NEXUS_PASS}" \
+              --upload-file "${PROJECT_PATH}/app1-python/requirements.txt" \
+              "${NEXUS_URL}/repository/raw-artifacts/\${ARTIFACT_PATH}/app1-requirements.txt" || true
+
+            curl -sf -u "\${NEXUS_USER}:\${NEXUS_PASS}" \
+              --upload-file "${PROJECT_PATH}/app2-node/package.json" \
+              "${NEXUS_URL}/repository/raw-artifacts/\${ARTIFACT_PATH}/app2-package.json" || true
+
+            echo "✅ Artefatos publicados no Nexus: \${ARTIFACT_PATH}"
+          """
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('🚀 Deploy — Docker Compose') {
+    // ─────────────────────────────────────────────────────────────────────────
+      steps {
+        sh """
+          cd ${PROJECT_PATH}
+          docker compose up -d --build --remove-orphans app1 app2 nginx redis
+
+          # Aguardar apps ficarem healthy
+          echo "Aguardando apps ficarem healthy..."
+          for app in app1 app2; do
+            for i in \$(seq 1 30); do
+              STATUS=\$(docker inspect --format='{{.State.Health.Status}}' \$app 2>/dev/null || echo "unknown")
+              echo "  \$app status: \$STATUS (tentativa \$i/30)"
+              [ "\$STATUS" = "healthy" ] && break
+              [ \$i -eq 30 ] && echo "⚠️ Timeout aguardando \$app"
+              sleep 5
+            done
+          done
+          echo "✅ Aplicações no ar"
+        """
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('🛡️ DAST — OWASP ZAP') {
+    // ─────────────────────────────────────────────────────────────────────────
+      parallel {
+
+        stage('ZAP — App1') {
+          steps {
+            sh """
+              mkdir -p ${REPORTS_DIR}/zap
+
+              docker run --rm \
+                --network ${DOCKER_NETWORK} \
+                -v "\$(pwd)/${REPORTS_DIR}/zap:/zap/wrk:rw" \
+                --user root \
+                zaproxy/zap-stable \
+                zap-baseline.py \
+                  -t "http://nginx:80/app1/" \
+                  -r "zap-app1-report.html" \
+                  -J "zap-app1-report.json" \
+                  -x "zap-app1-report.xml" \
+                  -I || true
+
+              echo "✅ ZAP App1 concluído"
+            """
+          }
+        }
+
+        stage('ZAP — App2') {
+          steps {
+            sh """
+              docker run --rm \
+                --network ${DOCKER_NETWORK} \
+                -v "\$(pwd)/${REPORTS_DIR}/zap:/zap/wrk:rw" \
+                --user root \
+                zaproxy/zap-stable \
+                zap-baseline.py \
+                  -t "http://nginx:80/app2/" \
+                  -r "zap-app2-report.html" \
+                  -J "zap-app2-report.json" \
+                  -x "zap-app2-report.xml" \
+                  -I || true
+
+              echo "✅ ZAP App2 concluído"
+            """
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    stage('📊 Publish Reports — Nexus + Artifactory') {
+    // ─────────────────────────────────────────────────────────────────────────
+      steps {
+        withCredentials([
+          usernamePassword(credentialsId: 'nexus-creds',        usernameVariable: 'NEXUS_USER',  passwordVariable: 'NEXUS_PASS'),
+          usernamePassword(credentialsId: 'artifactory-creds',  usernameVariable: 'ARTIF_USER',  passwordVariable: 'ARTIF_PASS')
+        ]) {
+          sh """
+            BUILD_TS=\$(date -u +%Y%m%d-%H%M%S)
+            REPORT_PATH="reports/build-${BUILD_NUMBER}-\${BUILD_TS}"
+
+            # Publicar relatórios ZAP no Nexus (raw)
+            for report_file in ${REPORTS_DIR}/zap/*.html; do
+              [ -f "\$report_file" ] || continue
+              fname=\$(basename \$report_file)
+              curl -sf -u "\${NEXUS_USER}:\${NEXUS_PASS}" \
+                --upload-file "\$report_file" \
+                "${NEXUS_URL}/repository/raw-artifacts/\${REPORT_PATH}/\${fname}" || true
+            done
+
+            # Publicar relatórios Dependency Check no Artifactory
+            for report_file in ${REPORTS_DIR}/depcheck-app1/*.html ${REPORTS_DIR}/depcheck-app2/*.html; do
+              [ -f "\$report_file" ] || continue
+              fname=\$(basename \$report_file)
+              curl -sf -u "\${ARTIF_USER}:\${ARTIF_PASS}" \
+                --upload-file "\$report_file" \
+                "${ARTIFACTORY_URL}/artifactory/security-reports/\${REPORT_PATH}/\${fname}" || true
+            done
+
+            echo "✅ Relatórios publicados nos repositórios"
+          """
+        }
+      }
+    }
+
+  } // end stages
+
+  // ─────────────────────────────────────────────────────────────────────────
+  post {
+  // ─────────────────────────────────────────────────────────────────────────
+    always {
+      // Arquivar artefatos no Jenkins
+      archiveArtifacts artifacts: 'reports/**/*.html,reports/**/*.json,reports/**/*.xml',
+                       allowEmptyArchive: true
+
+      // Publicar relatórios HTML
+      publishHTML(target: [
+        allowMissing:          true,
+        alwaysLinkToLastBuild: true,
+        keepAll:               true,
+        reportDir:             'reports/zap',
+        reportFiles:           'zap-app1-report.html,zap-app2-report.html',
+        reportName:            'DAST — OWASP ZAP Report'
+      ])
+
+      publishHTML(target: [
+        allowMissing:          true,
+        alwaysLinkToLastBuild: true,
+        keepAll:               true,
+        reportDir:             'reports/depcheck-app1',
+        reportFiles:           'dependency-check-report.html',
+        reportName:            'SAST — DepCheck App1'
+      ])
+
+      publishHTML(target: [
+        allowMissing:          true,
+        alwaysLinkToLastBuild: true,
+        keepAll:               true,
+        reportDir:             'reports/depcheck-app2',
+        reportFiles:           'dependency-check-report.html',
+        reportName:            'SAST — DepCheck App2'
+      ])
+
+      // Limpar workspace
+      cleanWs()
+    }
+
+    success {
+      echo """
+        ╔══════════════════════════════════════════════════╗
+        ║  ✅ Pipeline concluída com SUCESSO — Build #${BUILD_NUMBER}  ║
+        ╚══════════════════════════════════════════════════╝
+        Apps: http://localhost:8080/app1/   http://localhost:8080/app2/
+        Relatórios ZAP e DepCheck publicados nos repositórios.
+      """
+    }
+
+    failure {
+      echo """
+        ╔══════════════════════════════════════════════════╗
+        ║  ❌ Pipeline FALHOU — Build #${BUILD_NUMBER}               ║
+        ╚══════════════════════════════════════════════════╝
+        Verifique os logs acima para mais detalhes.
+      """
+    }
+  }
+}

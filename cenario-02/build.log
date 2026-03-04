@@ -1,0 +1,351 @@
+🚀 Iniciando stack completa (apps + CI/CD)...
+abcca63f3ec9da26329769353d92bf08f0fbaa1cf2d2167ec567e3275ca86171
+ Image devops-challenge-2025-jenkins Building 
+ Image devops-challenge-2025-init-services Building 
+ Image devops-challenge-2025-app1 Building 
+ Image devops-challenge-2025-app2 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 2.30kB done
+#1 DONE 0.0s
+
+#2 [init-services internal] load build definition from Dockerfile.init
+#2 transferring dockerfile: 204B done
+#2 DONE 0.0s
+
+#3 [app1 internal] load build definition from Dockerfile
+#3 transferring dockerfile: 713B done
+#3 DONE 0.0s
+
+#4 [jenkins internal] load build definition from Dockerfile
+#4 transferring dockerfile: 4.35kB done
+#4 DONE 0.0s
+
+#5 [app2 internal] load build definition from Dockerfile
+#5 transferring dockerfile: 537B done
+#5 DONE 0.0s
+
+#6 [app2 internal] load metadata for docker.io/library/node:20-alpine
+#6 ...
+
+#7 [app1 internal] load metadata for docker.io/library/python:3.12-slim
+#7 DONE 1.3s
+
+#8 [app1 internal] load .dockerignore
+#8 transferring context: 2B 0.0s done
+#8 DONE 0.0s
+
+#9 [app1 internal] load build context
+#9 DONE 0.0s
+
+#10 [app1 builder 1/5] FROM docker.io/library/python:3.12-slim@sha256:f3fa41d74a768c2fce8016b98c191ae8c1bacd8f1152870a3f9f87d350920b7c
+#10 resolve docker.io/library/python:3.12-slim@sha256:f3fa41d74a768c2fce8016b98c191ae8c1bacd8f1152870a3f9f87d350920b7c 0.0s done
+#10 DONE 0.0s
+
+#11 [jenkins internal] load metadata for docker.io/jenkins/jenkins:lts-jdk17
+#11 ...
+
+#9 [app1 internal] load build context
+#9 transferring context: 63B done
+#9 DONE 0.0s
+
+#12 [app1 builder 4/5] COPY requirements.txt .
+#12 CACHED
+
+#13 [app1 stage-1 4/6] COPY --from=builder /install /usr/local
+#13 CACHED
+
+#14 [app1 builder 5/5] RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+#14 CACHED
+
+#15 [app1 stage-1 3/6] RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+#15 CACHED
+
+#16 [app1 stage-1 5/6] COPY app.py .
+#16 CACHED
+
+#17 [app1 stage-1 2/6] WORKDIR /app
+#17 CACHED
+
+#18 [app1 builder 2/5] WORKDIR /build
+#18 CACHED
+
+#19 [app1 builder 3/5] RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+#19 CACHED
+
+#20 [app1 stage-1 6/6] RUN useradd -m appuser
+#20 CACHED
+
+#21 [init-services internal] load metadata for docker.io/library/alpine:3.19
+#21 DONE 1.7s
+
+#6 [app2 internal] load metadata for docker.io/library/node:20-alpine
+#6 DONE 1.6s
+
+#22 [init-services internal] load .dockerignore
+#22 transferring context: 2B done
+#22 DONE 0.0s
+
+#11 [jenkins internal] load metadata for docker.io/jenkins/jenkins:lts-jdk17
+#11 DONE 1.6s
+
+#23 [app2 internal] load .dockerignore
+#23 transferring context: 2B done
+#23 DONE 0.0s
+
+#24 [jenkins internal] load .dockerignore
+#24 transferring context: 2B done
+#24 DONE 0.0s
+
+#25 [init-services internal] load build context
+#25 DONE 0.0s
+
+#26 [app2 internal] load build context
+#26 transferring context: 62B 0.0s done
+#26 DONE 0.1s
+
+#27 [jenkins internal] load build context
+#27 transferring context: 62B 0.0s done
+#27 DONE 0.1s
+
+#28 [app1] exporting to image
+#28 exporting layers 0.0s done
+#28 exporting manifest sha256:99a7274e3a1eabdb7767c5e357482a68bffc10f4516fb9e64beec36269510b36 done
+#28 exporting config sha256:e635edf49a3be3b3146b766875c0aa085214cfb17b0e65c980f7042e906858d9 done
+#28 exporting attestation manifest sha256:242cf340c97b81399f1adc6ab36399bdd4e5409b4a30869ac37525643e8bbafe 0.1s done
+#28 exporting manifest list sha256:87688b6616b7bed7927259ab12f0484b9956073f3a4b59942aa23445e11882e2 0.1s done
+#28 naming to docker.io/library/devops-challenge-2025-app1:latest done
+#28 unpacking to docker.io/library/devops-challenge-2025-app1:latest 0.0s done
+#28 ...
+
+#29 [init-services 1/4] FROM docker.io/library/alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
+#29 resolve docker.io/library/alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1 0.1s done
+#29 DONE 0.2s
+
+#30 [app2 builder 1/5] FROM docker.io/library/node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8
+#30 resolve docker.io/library/node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8 0.1s done
+#30 DONE 0.1s
+
+#25 [init-services internal] load build context
+#25 transferring context: 38B done
+#25 DONE 0.0s
+
+#31 [jenkins  1/12] FROM docker.io/jenkins/jenkins:lts-jdk17@sha256:2ba928b91bb47d86817d803b4a37d720db3e4fd18ed396638491787e23b13cbe
+#31 resolve docker.io/jenkins/jenkins:lts-jdk17@sha256:2ba928b91bb47d86817d803b4a37d720db3e4fd18ed396638491787e23b13cbe 0.1s done
+#31 DONE 0.1s
+
+#32 [init-services 2/4] RUN apk add --no-cache bash curl jq
+#32 CACHED
+
+#33 [init-services 3/4] COPY init-services.sh /init-services.sh
+#33 CACHED
+
+#34 [init-services 4/4] RUN chmod +x /init-services.sh
+#34 CACHED
+
+#35 [jenkins  7/12] RUN curl -sL     "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip"     -o /tmp/sonar-scanner.zip     && unzip -q /tmp/sonar-scanner.zip -d /opt     && ln -sf "/opt/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner"               /usr/local/bin/sonar-scanner     && rm /tmp/sonar-scanner.zip
+#35 CACHED
+
+#36 [jenkins  4/12] RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable"     | tee /etc/apt/sources.list.d/docker.list > /dev/null  && apt-get update  && apt-get install -y docker-ce-cli  && rm -rf /var/lib/apt/lists/*
+#36 CACHED
+
+#37 [jenkins  8/12] RUN curl -sL     "https://github.com/jeremylong/DependencyCheck/releases/download/v9.2.0/dependency-check-9.2.0-release.zip"     -o /tmp/depcheck.zip     && unzip -q /tmp/depcheck.zip -d /opt     && ln -sf /opt/dependency-check/bin/dependency-check.sh               /usr/local/bin/dependency-check     && rm /tmp/depcheck.zip
+#37 CACHED
+
+#38 [jenkins  9/12] RUN curl -sL "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64"     -o /usr/local/bin/docker-compose     && chmod +x /usr/local/bin/docker-compose
+#38 CACHED
+
+#39 [jenkins  5/12] RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash -  && apt-get install -y nodejs  && rm -rf /var/lib/apt/lists/*
+#39 CACHED
+
+#40 [jenkins  6/12] RUN usermod -aG docker jenkins
+#40 CACHED
+
+#41 [jenkins 11/12] RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
+#41 CACHED
+
+#42 [jenkins  3/12] RUN apt-get update && apt-get install -y --no-install-recommends     apt-transport-https     ca-certificates     curl     gnupg     lsb-release     wget     git     unzip     jq     python3     python3-pip     && rm -rf /var/lib/apt/lists/*
+#42 CACHED
+
+#43 [jenkins 10/12] COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
+#43 CACHED
+
+#44 [jenkins  2/12] RUN groupadd docker     && usermod -aG docker jenkins
+#44 CACHED
+
+#45 [jenkins 12/12] COPY casc.yaml /var/jenkins_home/casc.yaml
+#45 CACHED
+
+#46 [app2 stage-1 4/5] COPY --from=builder /app/node_modules ./node_modules
+#46 CACHED
+
+#47 [app2 builder 4/5] COPY package*.json ./
+#47 CACHED
+
+#48 [app2 builder 2/5] WORKDIR /app
+#48 CACHED
+
+#49 [app2 builder 3/5] RUN apk add --no-cache python3 make g++ git
+#49 CACHED
+
+#50 [app2 stage-1 3/5] RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+#50 CACHED
+
+#51 [app2 builder 5/5] RUN npm install --omit=dev  # requer package-lock.json
+#51 CACHED
+
+#52 [app2 stage-1 5/5] COPY index.js .
+#52 CACHED
+
+#28 [app1] exporting to image
+#28 DONE 0.5s
+
+#53 [init-services] exporting to image
+#53 exporting layers done
+#53 exporting manifest sha256:8af56cd3ef20ef376825be503d387d7c6f173a5ef8ecc4f31b8d0ae3f82b20d5 done
+#53 exporting config sha256:36499b0f6beeaf9ec661357e47ba84801c850ffebdea16d788bee90c9f6172e3 done
+#53 exporting attestation manifest sha256:87240a4fab7b2a7df3b49c93188b52c6d0e171d49a575456c7a69d6c3b87c649 0.1s done
+#53 exporting manifest list sha256:a0dc668882267446b602a2147f9f4c93958e1cee34d324e4ea23509c6a95a275 0.0s done
+#53 naming to docker.io/library/devops-challenge-2025-init-services:latest done
+#53 unpacking to docker.io/library/devops-challenge-2025-init-services:latest
+#53 unpacking to docker.io/library/devops-challenge-2025-init-services:latest 0.0s done
+#53 DONE 0.3s
+
+#54 [app2] exporting to image
+#54 exporting layers 0.0s done
+#54 exporting manifest sha256:0cf00970f9d3627aabdd099e221a4f39b91b03c84a0d286cf39b249435ce1907 0.0s done
+#54 exporting config sha256:d7dd7df02cbac8b1cda19aac73e3b6579442e0c2792c639737d728ae04dc6f2d done
+#54 exporting attestation manifest sha256:283e65f353f03bcb0e98f48dc1a31f9d2f8c777a5b42cfb8d212ba15543f7db8 0.1s done
+#54 exporting manifest list sha256:2c6f49cade11791494ad57a6781addb4c1df64852efe378f9027ac102f63e90e 0.0s done
+#54 naming to docker.io/library/devops-challenge-2025-app2:latest 0.0s done
+#54 unpacking to docker.io/library/devops-challenge-2025-app2:latest 0.1s done
+#54 DONE 0.3s
+
+#55 [app1] resolving provenance for metadata file
+#55 DONE 0.0s
+
+#56 [init-services] resolving provenance for metadata file
+#56 DONE 0.0s
+
+#57 [jenkins] exporting to image
+#57 exporting layers 0.1s done
+#57 exporting manifest sha256:af7eaea502d884999507542e3bdecdd3a9713be47a8eb51bc205a43a0ddd8588 0.0s done
+#57 exporting config sha256:e970b7394da63966ba676cc98b5eab07a40613917045ce41d57da8f74055e5a1 0.0s done
+#57 exporting attestation manifest sha256:396a6f621ea32abf06746fdead7d84d8580ded1e76668b1ab6af900c9904eda3 0.0s done
+#57 exporting manifest list sha256:f9ad01369207b9da01065af60f3e24c070dde60dc22acbbf779608262ea0e074 0.0s done
+#57 naming to docker.io/library/devops-challenge-2025-jenkins:latest 0.0s done
+#57 unpacking to docker.io/library/devops-challenge-2025-jenkins:latest 0.1s done
+#57 DONE 0.4s
+
+#58 [app2] resolving provenance for metadata file
+#58 DONE 0.0s
+
+#59 [jenkins] resolving provenance for metadata file
+#59 DONE 0.0s
+ Image devops-challenge-2025-app2 Built 
+ Image devops-challenge-2025-app1 Built 
+ Image devops-challenge-2025-init-services Built 
+ Image devops-challenge-2025-jenkins Built 
+ Volume devops-challenge-2025_grafana_data Creating 
+ Volume devops-challenge-2025_grafana_data Created 
+ Volume devops-challenge-2025_sonar_extensions Creating 
+ Volume devops-challenge-2025_sonar_extensions Created 
+ Volume devops-challenge-2025_prometheus_data Creating 
+ Volume devops-challenge-2025_prometheus_data Created 
+ Volume devops-challenge-2025_nexus_data Creating 
+ Volume devops-challenge-2025_nexus_data Created 
+ Volume devops-challenge-2025_sonar_data Creating 
+ Volume devops-challenge-2025_sonar_data Created 
+ Volume devops-challenge-2025_postgres_artifactory_data Creating 
+ Volume devops-challenge-2025_postgres_artifactory_data Created 
+ Volume devops-challenge-2025_nginx_cache Creating 
+ Volume devops-challenge-2025_nginx_cache Created 
+ Volume devops-challenge-2025_artifactory_data Creating 
+ Volume devops-challenge-2025_artifactory_data Created 
+ Volume devops-challenge-2025_secrets_vol Creating 
+ Volume devops-challenge-2025_secrets_vol Created 
+ Volume devops-challenge-2025_sonar_logs Creating 
+ Volume devops-challenge-2025_sonar_logs Created 
+ Volume devops-challenge-2025_postgres_sonar_data Creating 
+ Volume devops-challenge-2025_postgres_sonar_data Created 
+ Volume devops-challenge-2025_jenkins_home Creating 
+ Volume devops-challenge-2025_jenkins_home Created 
+ Container postgres-sonar Creating 
+ Container redis Creating 
+ Container grafana Creating 
+ Container nexus Creating 
+ Container prometheus Creating 
+ Container postgres-artifactory Creating 
+ Container nexus Created 
+ Container prometheus Created 
+ Container grafana Created 
+ Container redis Created 
+ Container app1 Creating 
+ Container redis-exporter Creating 
+ Container app2 Creating 
+ Container postgres-artifactory Created 
+ Container artifactory Creating 
+ Container postgres-sonar Created 
+ Container sonarqube Creating 
+ Container redis-exporter Created 
+ Container app2 Created 
+ Container artifactory Created 
+ Container app1 Created 
+ Container nginx Creating 
+ Container sonarqube Created 
+ Container init-services Creating 
+ Container init-services Created 
+ Container jenkins Creating 
+ Container nginx Created 
+ Container nginx-exporter Creating 
+ Container nginx-exporter Created 
+ Container jenkins Created 
+ Container nexus Starting 
+ Container postgres-sonar Starting 
+ Container redis Starting 
+ Container grafana Starting 
+ Container postgres-artifactory Starting 
+ Container prometheus Starting 
+ Container postgres-artifactory Started 
+ Container postgres-artifactory Waiting 
+ Container nexus Started 
+ Container redis Started 
+ Container redis Waiting 
+ Container redis Waiting 
+ Container redis-exporter Starting 
+ Container grafana Started 
+ Container postgres-sonar Started 
+ Container postgres-sonar Waiting 
+ Container prometheus Started 
+ Container redis-exporter Started 
+ Container redis Healthy 
+ Container app2 Starting 
+ Container redis Healthy 
+ Container app1 Starting 
+ Container app1 Started 
+ Container app2 Started 
+ Container app1 Waiting 
+ Container app2 Waiting 
+ Container postgres-artifactory Healthy 
+ Container artifactory Starting 
+ Container artifactory Started 
+ Container postgres-sonar Healthy 
+ Container sonarqube Starting 
+ Container sonarqube Started 
+ Container sonarqube Waiting 
+ Container nexus Waiting 
+ Container artifactory Waiting 
+ Container app1 Healthy 
+ Container app2 Healthy 
+ Container nginx Starting 
+ Container nginx Started 
+ Container nginx-exporter Starting 
+ Container nginx-exporter Started 
+ Container nexus Healthy 
+ Container sonarqube Healthy 
+ Container artifactory Healthy 
+ Container init-services Starting 
+ Container init-services Started 
+ Container init-services Waiting 
+ Container init-services Error service "init-services" didn't complete successfully: exit 1
+service "init-services" didn't complete successfully: exit 1
+make: *** [Makefile:29: up-ci] Erro 1

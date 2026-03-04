@@ -1,0 +1,221 @@
+services:
+
+  # ── PostgreSQL para SonarQube ─────────────────────────────────────────────────
+  postgres-sonar:
+    image: postgres:16-alpine
+    container_name: postgres-sonar
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sonar}
+      POSTGRES_USER: ${POSTGRES_USER:-sonar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sonar123}
+    volumes:
+      - postgres_sonar_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sonar} -d ${POSTGRES_DB:-sonar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [devops-net]
+
+  # ── PostgreSQL para Artifactory ───────────────────────────────────────────────
+  postgres-artifactory:
+    image: postgres:16-alpine
+    container_name: postgres-artifactory
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: artifactory
+      POSTGRES_USER: artifactory
+      POSTGRES_PASSWORD: ${ARTIFACTORY_DB_PASSWORD:-artifactory123}
+    volumes:
+      - postgres_artifactory_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U artifactory -d artifactory"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [devops-net]
+    
+  # ── SonarQube (SAST) ──────────────────────────────────────────────────────────
+  sonarqube:
+    image: sonarqube:10-community
+    container_name: sonarqube
+    restart: unless-stopped
+    ports:
+      - "${SONAR_PORT:-9000}:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres-sonar:5432/${POSTGRES_DB:-sonar}
+      SONAR_JDBC_USERNAME: ${POSTGRES_USER:-sonar}
+      SONAR_JDBC_PASSWORD: ${POSTGRES_PASSWORD:-sonar123}
+      SONAR_FORCEAUTHENTICATION: "false"
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_logs:/opt/sonarqube/logs
+      - sonar_extensions:/opt/sonarqube/extensions
+    depends_on:
+      postgres-sonar:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 250s
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    networks: [devops-net]
+
+  # ── Nexus Repository Manager ──────────────────────────────────────────────────
+  nexus:
+    image: sonatype/nexus3:3.68.0
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "${NEXUS_PORT:-8081}:8081"
+      - "${NEXUS_DOCKER_PORT:-5001}:5001"
+    volumes:
+      - nexus_data:/nexus-data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -o /dev/null -w '%{http_code}' http://localhost:8081/service/rest/v1/status | grep -q '200'"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+    networks: [devops-net]
+    
+  # ── Pré-init do Artifactory: cria master.key antes de subir ───────────────
+  artifactory-presetup:
+    image: alpine:3.18
+    container_name: artifactory-presetup
+    restart: "no"
+    volumes:
+      - artifactory_data:/var/opt/jfrog/artifactory
+    command: >
+      sh -c "
+        mkdir -p /var/opt/jfrog/artifactory/etc/security && if [ ! -f /var/opt/jfrog/artifactory/etc/security/master.key ]; then cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n1 > /var/opt/jfrog/artifactory/etc/security/master.key &&
+         echo 'master.key gerado com sucesso'
+        else
+          echo 'master.key ja existe'
+        fi &&
+        if [ ! -f /var/opt/jfrog/artifactory/etc/security/join.key ]; then
+          cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n1 > /var/opt/jfrog/artifactory/etc/security/join.key &&
+          echo 'join.key gerado com sucesso'
+        else
+          echo 'join.key ja existe'
+        fi &&
+        chown -R 1030:1030 /var/opt/jfrog/artifactory/etc/security && chmod 777 /var/opt/jfrog/artifactory/etc/security/master.key /var/opt/jfrog/artifactory/etc/security/join.key && echo 'Permissoes ajustadas'
+      "
+    networks: [devops-net]  
+
+  # ── JFrog artifactory OSS (Docker Registry) ───────────────────────────────────
+  artifactory:
+    image: releases-docker.jfrog.io/jfrog/artifactory-oss:7.77.3
+    container_name: artifactory
+    restart: unless-stopped    # ← restart automático resolve o primeiro boot
+    ports:
+      - "${ARTIFACTORY_PORT:-8082}:8082"
+      - "${ARTIFACTORY_DOCKER_PORT:-5002}:5002"
+    environment:
+      JF_SHARED_DATABASE_TYPE: postgresql
+      JF_SHARED_DATABASE_DRIVER: org.postgresql.Driver
+      JF_SHARED_DATABASE_URL: jdbc:postgresql://postgres-artifactory:5432/artifactory
+      JF_SHARED_DATABASE_USERNAME: artifactory
+      JF_SHARED_DATABASE_PASSWORD: ${ARTIFACTORY_DB_PASSWORD:-artifactory123}
+      JF_SHARED_NODE_HAENABLED: "false"
+      #JF_ROUTER_TOPOLOGY_LOCAL_REQUIREDSERVICETYPES: "jfrt,jfac,jfmd,jffe,jfevt"
+      EXTRA_JAVA_OPTS: "-Xms2g -Xmx4g"
+      JF_FRONTEND_PINGRETRIES: "600"
+      MALLOC_ARENA_MAX: "2"
+      # JF_SHARED_SECURITY_MASTERKEYHEX removido — causa race condition no primeiro boot
+    volumes:
+      - artifactory_data:/var/opt/jfrog/artifactory
+    depends_on:
+      postgres-artifactory:
+        condition: service_healthy
+      artifactory-presetup:
+        condition: service_completed_successfully  
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/artifactory/api/system/ping | grep -q 'OK'"]
+      interval: 60s
+      timeout: 15s
+      retries: 20
+      start_period: 600s    # 10 minutos — cobre restart + segundo boot
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    networks: [devops-net]
+
+# ── Init Services (configura tudo automaticamente, roda e sai) ────────────────
+  init-services:
+    build:
+      context: ./ci/scripts
+      dockerfile: Dockerfile.init
+    container_name: init-services
+    dns: ["127.0.0.11"]
+    dns_search: [""]        # ← remove o search domain incorreto
+    tty: true
+    stdin_open: true
+    networks: [devops-net]
+    volumes:
+      - secrets_vol:/secrets
+      - nexus_data:/nexus-data:ro
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+      nexus:
+        condition: service_healthy
+      artifactory:
+        condition: service_healthy
+    environment:
+      SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:-admin123}
+      NEXUS_ADMIN_PASSWORD: ${NEXUS_ADMIN_PASSWORD:-admin123}
+      ARTIFACTORY_ADMIN_PASSWORD: ${ARTIFACTORY_ADMIN_PASSWORD:-password}
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin123}
+      RETRY_MAX: "30"
+      RETRY_DELAY: "10"
+
+  # ── Jenkins ───────────────────────────────────────────────────────────────────
+  jenkins:
+    build:
+      context: ./ci/jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins
+    restart: unless-stopped
+    ports:
+      - "${JENKINS_PORT:-8088}:8080"
+      - "50000:50000"
+    environment:
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin123}
+      SONAR_URL: http://sonarqube:9000
+      NEXUS_URL: http://nexus:8081
+      ARTIFACTORY_URL: http://artifactory:8082
+      NEXUS_ADMIN_PASSWORD: ${NEXUS_ADMIN_PASSWORD:-admin123}
+      ARTIFACTORY_ADMIN_PASSWORD: ${ARTIFACTORY_ADMIN_PASSWORD:-password}
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Dhudson.model.DirectoryBrowserSupport.CSP=
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - secrets_vol:/secrets:ro
+      - ./:/project:ro
+    depends_on:
+      init-services:
+        condition: service_completed_successfully
+    networks: [devops-net]
+
+networks:
+  devops-net:
+    external: true
+
+volumes:
+  postgres_sonar_data:
+  postgres_artifactory_data:
+  sonar_data:
+  sonar_logs:
+  sonar_extensions:
+  nexus_data:
+  artifactory_data:
+  jenkins_home:
+  secrets_vol:

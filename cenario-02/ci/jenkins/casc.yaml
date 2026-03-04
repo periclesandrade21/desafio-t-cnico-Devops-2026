@@ -1,0 +1,161 @@
+jenkins:
+  systemMessage: |
+    🚀 DevOps Challenge 2025 — CI/CD Auto-configurado
+    Pipeline: SAST (SonarQube + DepCheck) → Build → Push (Artifactory/Nexus) → Deploy → DAST (ZAP)
+
+  numExecutors: 4
+  mode: NORMAL
+  scmCheckoutRetryCount: 3
+
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_USER}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+          properties:
+            - mailer:
+                emailAddress: "admin@devops-challenge.local"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  remotingSecurity:
+    enabled: true
+
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "SONAR_URL"
+            value: "${SONAR_URL}"
+          - key: "NEXUS_URL"
+            value: "${NEXUS_URL}"
+          - key: "ARTIFACTORY_URL"
+            value: "${ARTIFACTORY_URL}"
+          - key: "DOCKER_NETWORK"
+            value: "devops-net"
+          - key: "PROJECT_PATH"
+            value: "/project"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # ── SonarQube Token ─────────────────────────────────────────────────
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${readFile:/secrets/sonar-token}"
+              description: "SonarQube Analysis Token (gerado automaticamente)"
+
+          # ── Nexus ──────────────────────────────────────────────────────────
+          - usernamePassword:
+              scope: GLOBAL
+              id: "nexus-creds"
+              username: "admin"
+              password: "${readFile:/secrets/nexus-admin-password}"
+              description: "Nexus Repository Manager — admin"
+
+          # ── Artifactory ────────────────────────────────────────────────────
+          - usernamePassword:
+              scope: GLOBAL
+              id: "artifactory-creds"
+              username: "admin"
+              password: "${readFile:/secrets/artifactory-admin-password}"
+              description: "JFrog Artifactory — admin"
+
+          # ── Docker Registry (Artifactory) ──────────────────────────────────
+          - usernamePassword:
+              scope: GLOBAL
+              id: "docker-registry-creds"
+              username: "admin"
+              password: "${readFile:/secrets/artifactory-admin-password}"
+              description: "Docker Registry no Artifactory"
+
+unclassified:
+  # ── SonarQube ──────────────────────────────────────────────────────────────
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: true
+    installations:
+      - name: "SonarQube"
+        serverUrl: "${SONAR_URL}"
+        credentialsId: "sonar-token"
+
+  # ── Timestamps ────────────────────────────────────────────────────────────
+  timestamper:
+    allPipelines: true
+
+  # ── JFrog ────────────────────────────────────────────────────────────────
+  jFrogPlatformBuilder:
+    jfrogInstances:
+      - instanceId: "artifactory-server"
+        platformUrl: "${ARTIFACTORY_URL}"
+        artifactoryUrl: "${ARTIFACTORY_URL}/artifactory"
+        credentialsConfig:
+          credentialsId: "artifactory-creds"
+
+tool:
+  sonarRunnerInstallation:
+    installations:
+      - name: "SonarScanner"
+        home: "/opt/sonar-scanner-5.0.1.3006-linux"
+
+  git:
+    installations:
+      - name: "Default"
+        home: "git"
+
+jobs:
+  - script: |
+      pipelineJob('devops-challenge-pipeline') {
+        description('''
+          <h3>DevOps Challenge 2025 — Pipeline Completo</h3>
+          <p>SAST → Build → Push → Deploy → DAST</p>
+          <ul>
+            <li>🔍 SAST: SonarQube + OWASP Dependency-Check</li>
+            <li>🐳 Build: Docker images para app1 (Python) e app2 (Node)</li>
+            <li>📦 Push: Artifactory (Docker) + Nexus (artefatos)</li>
+            <li>🚀 Deploy: docker compose up</li>
+            <li>🛡️ DAST: OWASP ZAP baseline scan</li>
+          </ul>
+        ''')
+        keepDependencies(false)
+        properties {
+          buildDiscarder {
+            strategy {
+              logRotator {
+                daysToKeepStr('30')
+                numToKeepStr('10')
+                artifactDaysToKeepStr('7')
+                artifactNumToKeepStr('5')
+              }
+            }
+          }
+          disableConcurrentBuilds()
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('file:///project')
+                }
+                branch('*/main')
+                extensions {
+                  cloneOption {
+                    shallow(false)
+                    noTags(false)
+                    timeout(10)
+                  }
+                }
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(false)
+          }
+        }
+        triggers {
+          pollSCM('H/5 * * * *')
+        }
+      }
