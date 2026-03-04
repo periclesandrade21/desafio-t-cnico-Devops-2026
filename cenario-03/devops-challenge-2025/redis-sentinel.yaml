@@ -1,0 +1,162 @@
+---
+# ── ConfigMap Redis + Sentinel ─────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: devops-challenge
+data:
+  redis.conf: |
+    requirepass redis-secret-2025
+    masterauth redis-secret-2025
+    maxmemory 128mb
+    maxmemory-policy allkeys-lru
+    appendonly no
+    save ""
+    loglevel notice
+
+  sentinel.conf: |
+    sentinel monitor mymaster redis-0.redis.devops-challenge.svc.cluster.local 6379 2
+    sentinel auth-pass mymaster redis-secret-2025
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 60000
+    sentinel parallel-syncs mymaster 1
+    sentinel deny-scripts-reconfig yes
+
+  # Script de entrypoint que configura master/replica automaticamente
+  start-redis.sh: |
+    #!/bin/sh
+    set -e
+    # O pod-0 é sempre o master inicial
+    if [ "$(hostname)" = "redis-0" ]; then
+      echo "Iniciando como MASTER..."
+      exec redis-server /etc/redis/redis.conf
+    else
+      echo "Iniciando como REPLICA do redis-0..."
+      exec redis-server /etc/redis/redis.conf \
+        --replicaof redis-0.redis.devops-challenge.svc.cluster.local 6379
+    fi
+
+  start-sentinel.sh: |
+    #!/bin/sh
+    # Aguardar master ficar disponível
+    until redis-cli -h redis-0.redis.devops-challenge.svc.cluster.local \
+          -a redis-secret-2025 ping >/dev/null 2>&1; do
+      echo "Aguardando master redis-0..."
+      sleep 2
+    done
+    exec redis-sentinel /etc/redis/sentinel.conf
+---
+# ── StatefulSet Redis (1 master + 2 replicas) ─────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: devops-challenge
+  labels:
+    app: redis
+spec:
+  serviceName: "redis"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+    spec:
+      containers:
+        # ── Redis principal ────────────────────────────────────────────────────
+        - name: redis
+          image: redis:7-alpine
+          command: ["sh", "/etc/redis/start-redis.sh"]
+          ports:
+            - containerPort: 6379
+              name: redis
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: redis-password
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "192Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "-a", "redis-secret-2025", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "-a", "redis-secret-2025", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+        # ── Redis Sentinel (sidecar) ───────────────────────────────────────────
+        - name: sentinel
+          image: redis:7-alpine
+          command: ["sh", "/etc/redis/start-sentinel.sh"]
+          ports:
+            - containerPort: 26379
+              name: sentinel
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "20m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+
+        # ── Redis Exporter (métricas para Prometheus) ─────────────────────────
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.61.0
+          ports:
+            - containerPort: 9121
+              name: metrics
+          env:
+            - name: REDIS_ADDR
+              value: "redis://localhost:6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: redis-password
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
+
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
+            defaultMode: 0755
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,337 @@
+pipeline {
+  agent any
+
+  environment {
+    // ── Registries ─────────────────────────────────────────────────────────
+    ARTIFACTORY_URL      = "${env.ARTIFACTORY_URL ?: 'http://artifactory:8082'}"
+    ARTIFACTORY_REGISTRY = "artifactory:5002"
+    NEXUS_URL            = "${env.NEXUS_URL ?: 'http://nexus:8081'}"
+    SONAR_URL            = "${env.SONAR_URL ?: 'http://sonarqube:9000'}"
+    DOCKER_NETWORK       = "${env.DOCKER_NETWORK ?: 'devops-net'}"
+    PROJECT_PATH         = "${env.PROJECT_PATH ?: '/project'}"
+
+    // ── Imagens ─────────────────────────────────────────────────────────────
+    APP1_IMAGE   = "devops-challenge/app1-python"
+    APP2_IMAGE   = "devops-challenge/app2-node"
+    IMAGE_TAG    = "${BUILD_NUMBER}"
+    REPORTS_DIR  = "reports"
+
+    // ── K3s ─────────────────────────────────────────────────────────────────
+    KUBECONFIG        = "/var/jenkins_home/.kube/config"
+    K3S_NAMESPACE     = "devops-challenge"
+    ARGOCD_SERVER     = "localhost:30080"
+  }
+
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+    timeout(time: 60, unit: 'MINUTES')
+    timestamps()
+    ansiColor('xterm')
+  }
+
+  stages {
+
+    stage('🔧 Checkout') {
+      steps {
+        sh "mkdir -p ${REPORTS_DIR}"
+        sh '''
+          if [ -d "${PROJECT_PATH}/.git" ]; then
+            git -C "${PROJECT_PATH}" status --short
+          fi
+        '''
+      }
+    }
+
+    stage('🔍 SAST — SonarQube') {
+      parallel {
+        stage('App1 — Python') {
+          steps {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=devops-app1 \
+                  -Dsonar.projectName="DevOps App1 Python" \
+                  -Dsonar.sources=${PROJECT_PATH}/app1-python \
+                  -Dsonar.host.url=${SONAR_URL} \
+                  -Dsonar.login=\${SONAR_TOKEN} \
+                  -Dsonar.python.version=3 \
+                  -Dsonar.exclusions="**/tests/**,**/__pycache__/**"
+              """
+            }
+          }
+        }
+        stage('App2 — Node.js') {
+          steps {
+            withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+              sh """
+                sonar-scanner \
+                  -Dsonar.projectKey=devops-app2 \
+                  -Dsonar.projectName="DevOps App2 Node" \
+                  -Dsonar.sources=${PROJECT_PATH}/app2-node \
+                  -Dsonar.host.url=${SONAR_URL} \
+                  -Dsonar.login=\${SONAR_TOKEN} \
+                  -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                  -Dsonar.exclusions="**/node_modules/**,**/tests/**"
+              """
+            }
+          }
+        }
+      }
+    }
+
+    stage('🔒 Quality Gate') {
+      steps {
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          sh """
+            for project in devops-app1 devops-app2; do
+              for i in \$(seq 1 12); do
+                STATUS=\$(curl -sf -u "\${SONAR_TOKEN}:" \
+                  "${SONAR_URL}/api/qualitygates/project_status?projectKey=\$project" \
+                  | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+                echo "  Status \$project: \$STATUS (tentativa \$i/12)"
+                [ "\$STATUS" = "OK" ]    && break
+                [ "\$STATUS" = "ERROR" ] && echo "⚠️  Quality Gate falhou para \$project" && break
+                [ \$i -eq 12 ]           && echo "⚠️  Timeout Quality Gate"
+                sleep 10
+              done
+            done
+          """
+        }
+      }
+    }
+
+    stage('📦 SAST — Dependency Check') {
+      parallel {
+        stage('DepCheck App1') {
+          steps {
+            sh """
+              dependency-check \
+                --project "App1-Python" \
+                --scan ${PROJECT_PATH}/app1-python \
+                --out ${REPORTS_DIR}/depcheck-app1 \
+                --format HTML --format JSON \
+                --failOnCVSS 9 || true
+            """
+          }
+        }
+        stage('DepCheck App2') {
+          steps {
+            sh """
+              dependency-check \
+                --project "App2-Node" \
+                --scan ${PROJECT_PATH}/app2-node \
+                --out ${REPORTS_DIR}/depcheck-app2 \
+                --format HTML --format JSON \
+                --failOnCVSS 9 || true
+            """
+          }
+        }
+      }
+    }
+
+    stage('🐳 Build — Docker Images') {
+      parallel {
+        stage('Build App1') {
+          steps {
+            sh """
+              docker build \
+                -t ${APP1_IMAGE}:${IMAGE_TAG} \
+                -t ${APP1_IMAGE}:latest \
+                --label "build.number=${BUILD_NUMBER}" \
+                --label "build.git.commit=\$(git -C ${PROJECT_PATH} rev-parse --short HEAD 2>/dev/null || echo 'unknown')" \
+                ${PROJECT_PATH}/app1-python
+            """
+          }
+        }
+        stage('Build App2') {
+          steps {
+            sh """
+              docker build \
+                -t ${APP2_IMAGE}:${IMAGE_TAG} \
+                -t ${APP2_IMAGE}:latest \
+                --label "build.number=${BUILD_NUMBER}" \
+                ${PROJECT_PATH}/app2-node
+            """
+          }
+        }
+      }
+    }
+
+    stage('📤 Push — Artifactory') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'artifactory-creds',
+          usernameVariable: 'ARTIF_USER', passwordVariable: 'ARTIF_PASS'
+        )]) {
+          sh """
+            echo "\${ARTIF_PASS}" | docker login --username "\${ARTIF_USER}" \
+              --password-stdin http://${ARTIFACTORY_REGISTRY} || true
+
+            for img in "${APP1_IMAGE}" "${APP2_IMAGE}"; do
+              docker tag \${img}:${IMAGE_TAG} ${ARTIFACTORY_REGISTRY}/\${img}:${IMAGE_TAG} || true
+              docker tag \${img}:latest       ${ARTIFACTORY_REGISTRY}/\${img}:latest       || true
+              docker push ${ARTIFACTORY_REGISTRY}/\${img}:${IMAGE_TAG} || true
+              docker push ${ARTIFACTORY_REGISTRY}/\${img}:latest       || true
+            done
+          """
+        }
+      }
+    }
+
+    stage('📦 Publish — Nexus') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'nexus-creds',
+          usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS'
+        )]) {
+          sh """
+            BASE="${NEXUS_URL}/repository/raw-artifacts/devops-challenge/build-${BUILD_NUMBER}"
+            curl -sf -u "\${NEXUS_USER}:\${NEXUS_PASS}" \
+              --upload-file "${PROJECT_PATH}/app1-python/requirements.txt" "\${BASE}/app1-requirements.txt" || true
+            curl -sf -u "\${NEXUS_USER}:\${NEXUS_PASS}" \
+              --upload-file "${PROJECT_PATH}/app2-node/package.json"       "\${BASE}/app2-package.json"      || true
+          """
+        }
+      }
+    }
+
+    // ── Deploy: K3s via ArgoCD (GitOps) OU Docker Compose (fallback) ─────────
+    stage('🚀 Deploy') {
+      steps {
+        script {
+          def k3sAvailable = sh(
+            script: "kubectl --kubeconfig=${KUBECONFIG} cluster-info >/dev/null 2>&1 && echo yes || echo no",
+            returnStdout: true
+          ).trim()
+
+          if (k3sAvailable == "yes") {
+            echo "✅ K3s disponível — deploy via ArgoCD (GitOps)"
+            sh """
+              # Atualizar imagem nos deployments K8s
+              kubectl --kubeconfig=${KUBECONFIG} set image deployment/app1 \
+                app1=${ARTIFACTORY_REGISTRY}/${APP1_IMAGE}:${IMAGE_TAG} \
+                -n ${K3S_NAMESPACE} || true
+
+              kubectl --kubeconfig=${KUBECONFIG} set image deployment/app2 \
+                app2=${ARTIFACTORY_REGISTRY}/${APP2_IMAGE}:${IMAGE_TAG} \
+                -n ${K3S_NAMESPACE} || true
+
+              # Forçar sync no ArgoCD
+              argocd app sync app1-python --insecure --server ${ARGOCD_SERVER} --auth-token \$(cat /secrets/argocd-token 2>/dev/null || echo '') || true
+              argocd app sync app2-node   --insecure --server ${ARGOCD_SERVER} --auth-token \$(cat /secrets/argocd-token 2>/dev/null || echo '') || true
+
+              # Aguardar rollout
+              kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/app1 \
+                -n ${K3S_NAMESPACE} --timeout=120s || true
+              kubectl --kubeconfig=${KUBECONFIG} rollout status deployment/app2 \
+                -n ${K3S_NAMESPACE} --timeout=120s || true
+
+              echo "✅ Deploy K3s concluído"
+            """
+          } else {
+            echo "⚠️  K3s indisponível — deploy via Docker Compose (fallback)"
+            sh """
+              cd ${PROJECT_PATH}
+              docker compose up -d --build --remove-orphans app1 app2 nginx redis
+
+              for app in app1 app2; do
+                for i in \$(seq 1 30); do
+                  STATUS=\$(docker inspect --format='{{.State.Health.Status}}' \$app 2>/dev/null || echo "unknown")
+                  [ "\$STATUS" = "healthy" ] && break
+                  [ \$i -eq 30 ] && echo "⚠️  Timeout health check \$app"
+                  sleep 5
+                done
+              done
+            """
+          }
+        }
+      }
+    }
+
+    stage('🛡️ DAST — OWASP ZAP') {
+      parallel {
+        stage('ZAP App1') {
+          steps {
+            sh """
+              mkdir -p ${REPORTS_DIR}/zap
+              docker run --rm \
+                --network ${DOCKER_NETWORK} \
+                -v "\$(pwd)/${REPORTS_DIR}/zap:/zap/wrk:rw" \
+                --user root \
+                zaproxy/zap-stable \
+                zap-baseline.py \
+                  -t "http://nginx:80/app1/" \
+                  -r "zap-app1-report.html" \
+                  -J "zap-app1-report.json" \
+                  -I || true
+            """
+          }
+        }
+        stage('ZAP App2') {
+          steps {
+            sh """
+              docker run --rm \
+                --network ${DOCKER_NETWORK} \
+                -v "\$(pwd)/${REPORTS_DIR}/zap:/zap/wrk:rw" \
+                --user root \
+                zaproxy/zap-stable \
+                zap-baseline.py \
+                  -t "http://nginx:80/app2/" \
+                  -r "zap-app2-report.html" \
+                  -J "zap-app2-report.json" \
+                  -I || true
+            """
+          }
+        }
+      }
+    }
+
+    stage('📊 Publish Reports') {
+      steps {
+        withCredentials([
+          usernamePassword(credentialsId: 'nexus-creds',       usernameVariable: 'NEXUS_USER',  passwordVariable: 'NEXUS_PASS'),
+          usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'ARTIF_USER',  passwordVariable: 'ARTIF_PASS')
+        ]) {
+          sh """
+            TS=\$(date -u +%Y%m%d-%H%M%S)
+            for f in ${REPORTS_DIR}/zap/*.html; do
+              [ -f "\$f" ] || continue
+              curl -sf -u "\${NEXUS_USER}:\${NEXUS_PASS}" \
+                --upload-file "\$f" "${NEXUS_URL}/repository/raw-artifacts/reports/build-${BUILD_NUMBER}-\${TS}/\$(basename \$f)" || true
+            done
+            for f in ${REPORTS_DIR}/depcheck-app1/*.html ${REPORTS_DIR}/depcheck-app2/*.html; do
+              [ -f "\$f" ] || continue
+              curl -sf -u "\${ARTIF_USER}:\${ARTIF_PASS}" \
+                --upload-file "\$f" "${ARTIFACTORY_URL}/artifactory/security-reports/build-${BUILD_NUMBER}-\${TS}/\$(basename \$f)" || true
+            done
+          """
+        }
+      }
+    }
+
+  } // end stages
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'reports/**/*.html,reports/**/*.json', allowEmptyArchive: true
+      publishHTML(target: [
+        allowMissing: true, alwaysLinkToLastBuild: true, keepAll: true,
+        reportDir: 'reports/zap', reportFiles: 'zap-app1-report.html,zap-app2-report.html',
+        reportName: 'DAST — OWASP ZAP'
+      ])
+      publishHTML(target: [
+        allowMissing: true, alwaysLinkToLastBuild: true, keepAll: true,
+        reportDir: 'reports/depcheck-app1', reportFiles: 'dependency-check-report.html',
+        reportName: 'SAST — DepCheck App1'
+      ])
+      publishHTML(target: [
+        allowMissing: true, alwaysLinkToLastBuild: true, keepAll: true,
+        reportDir: 'reports/depcheck-app2', reportFiles: 'dependency-check-report.html',
+        reportName: 'SAST — DepCheck App2'
+      ])
+      cleanWs()
+    }
+    success { echo "✅ Pipeline #${BUILD_NUMBER} concluída com SUCESSO" }
+    failure { echo "❌ Pipeline #${BUILD_NUMBER} FALHOU" }
+  }
+}

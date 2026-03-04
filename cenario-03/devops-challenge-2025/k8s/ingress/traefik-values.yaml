@@ -1,0 +1,56 @@
+## Traefik Helm Values — DevOps Challenge 2025
+globalArguments:
+  - "--global.sendanonymoususage=false"
+
+additionalArguments:
+  - "--log.level=INFO"
+  - "--accesslog=true"
+  - "--metrics.prometheus=true"
+  - "--metrics.prometheus.buckets=0.1,0.3,1.2,5"
+  - "--api.insecure=true"
+  - "--api.dashboard=true"
+  - "--serverstransport.insecureskipverify=true"
+
+deployment:
+  enabled: true
+  replicas: 2
+
+service:
+  type: NodePort
+
+ports:
+  web:
+    nodePort: 30080
+    redirectTo:
+      port: websecure
+  websecure:
+    nodePort: 30443
+    tls:
+      enabled: true
+      certResolver: "letsencrypt"
+  traefik:
+    nodePort: 30900
+
+ingressRoute:
+  dashboard:
+    enabled: true
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+  kubernetesIngress:
+    enabled: true
+
+certResolvers:
+  letsencrypt:
+    email: "admin@devops-challenge.local"
+    tlsChallenge: true
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "300m"
+    memory: "256Mi"

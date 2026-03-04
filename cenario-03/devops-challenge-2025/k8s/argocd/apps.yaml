@@ -1,0 +1,157 @@
+---
+# ── App1 — Python/Flask ────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app1-python
+  namespace: argocd
+  labels:
+    app: app1
+    environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: devops-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: devops-critical
+spec:
+  project: devops-challenge
+  source:
+    repoURL: 'file:///project'      # Troque pelo seu repo Git em produção
+    targetRevision: HEAD
+    path: k8s/apps/app1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-challenge
+  syncPolicy:
+    automated:
+      prune: true                   # Remove recursos que sumiram do Git
+      selfHeal: true                # Corrige desvios de configuração automaticamente
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 5
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas            # Ignorar mudanças de replicas pelo HPA
+---
+# ── App2 — Node.js/Express ────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app2-node
+  namespace: argocd
+  labels:
+    app: app2
+    environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-challenge
+  source:
+    repoURL: 'file:///project'
+    targetRevision: HEAD
+    path: k8s/apps/app2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-challenge
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 5
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+---
+# ── Redis Sentinel ─────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-sentinel
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-challenge
+  source:
+    repoURL: 'file:///project'
+    targetRevision: HEAD
+    path: k8s/redis
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-challenge
+  syncPolicy:
+    automated:
+      prune: false                  # Não deletar StatefulSets automaticamente
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+# ── HAProxy ────────────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: haproxy
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-challenge
+  source:
+    repoURL: 'file:///project'
+    targetRevision: HEAD
+    path: k8s/haproxy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-challenge
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+# ── Stack de Observabilidade ───────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: devops-challenge
+  source:
+    repoURL: 'file:///project'
+    targetRevision: HEAD
+    path: k8s/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

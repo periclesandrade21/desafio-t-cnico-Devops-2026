@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Reports (gerados na pipeline)
+reports/
+
+# Secrets — NUNCA versionar em produção
+# .env é commitado apenas com valores padrão de desenvolvimento
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,39 @@
+---
+# Headless service para o StatefulSet (DNS por pod)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: devops-challenge
+  labels:
+    app: redis
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+    - name: sentinel
+      port: 26379
+      targetPort: 26379
+---
+# Service do Sentinel para as aplicações
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: devops-challenge
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: sentinel
+      port: 26379
+      targetPort: 26379
+    - name: redis
+      port: 6379
+      targetPort: 6379

@@ -1,0 +1,157 @@
+services:
+
+  # ── PostgreSQL para SonarQube ─────────────────────────────────────────────────
+  postgres-sonar:
+    image: postgres:16-alpine
+    container_name: postgres-sonar
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sonar}
+      POSTGRES_USER: ${POSTGRES_USER:-sonar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sonar123}
+    volumes:
+      - postgres_sonar_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sonar} -d ${POSTGRES_DB:-sonar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [devops-net]
+
+  # ── SonarQube (SAST) ──────────────────────────────────────────────────────────
+  sonarqube:
+    image: sonarqube:10-community
+    container_name: sonarqube
+    restart: unless-stopped
+    ports:
+      - "${SONAR_PORT:-9000}:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres-sonar:5432/${POSTGRES_DB:-sonar}
+      SONAR_JDBC_USERNAME: ${POSTGRES_USER:-sonar}
+      SONAR_JDBC_PASSWORD: ${POSTGRES_PASSWORD:-sonar123}
+      SONAR_FORCEAUTHENTICATION: "false"
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_logs:/opt/sonarqube/logs
+      - sonar_extensions:/opt/sonarqube/extensions
+    depends_on:
+      postgres-sonar:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    networks: [devops-net]
+
+  # ── Nexus Repository Manager ──────────────────────────────────────────────────
+  nexus:
+    image: sonatype/nexus3:3.68.0
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "${NEXUS_PORT:-8081}:8081"
+      - "${NEXUS_DOCKER_PORT:-5001}:5001"
+    volumes:
+      - nexus_data:/nexus-data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/service/rest/v1/status | grep -q '\"healthy\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+    networks: [devops-net]
+
+  # ── JFrog Artifactory OSS (Docker Registry) ───────────────────────────────────
+  artifactory:
+    image: releases-docker.jfrog.io/jfrog/artifactory-oss:7.77.3
+    container_name: artifactory
+    restart: unless-stopped
+    ports:
+      - "${ARTIFACTORY_PORT:-8082}:8082"
+      - "${ARTIFACTORY_DOCKER_PORT:-5002}:5002"
+    environment:
+      JF_SHARED_DATABASE_TYPE: derby
+    volumes:
+      - artifactory_data:/var/opt/jfrog/artifactory
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/artifactory/api/system/ping | grep -q 'OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+    ulimits:
+      nofile: { soft: 32000, hard: 40000 }
+    networks: [devops-net]
+
+  # ── Init Services (configura tudo automaticamente, roda e sai) ────────────────
+  init-services:
+    build:
+      context: ./ci/scripts
+      dockerfile: Dockerfile.init
+    container_name: init-services
+    environment:
+      SONAR_ADMIN_PASSWORD: ${SONAR_ADMIN_PASSWORD:-admin123}
+      NEXUS_ADMIN_PASSWORD: ${NEXUS_ADMIN_PASSWORD:-admin123}
+      ARTIFACTORY_ADMIN_PASSWORD: ${ARTIFACTORY_ADMIN_PASSWORD:-password}
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin123}
+    volumes:
+      - secrets_vol:/secrets
+      - nexus_data:/nexus-data:ro
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+      nexus:
+        condition: service_healthy
+      artifactory:
+        condition: service_healthy
+    networks: [devops-net]
+
+  # ── Jenkins ───────────────────────────────────────────────────────────────────
+  jenkins:
+    build:
+      context: ./ci/jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins
+    restart: unless-stopped
+    ports:
+      - "${JENKINS_PORT:-8088}:8080"
+      - "50000:50000"
+    environment:
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin123}
+      SONAR_URL: http://sonarqube:9000
+      NEXUS_URL: http://nexus:8081
+      ARTIFACTORY_URL: http://artifactory:8082
+      NEXUS_ADMIN_PASSWORD: ${NEXUS_ADMIN_PASSWORD:-admin123}
+      ARTIFACTORY_ADMIN_PASSWORD: ${ARTIFACTORY_ADMIN_PASSWORD:-password}
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Dhudson.model.DirectoryBrowserSupport.CSP=
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - secrets_vol:/secrets:ro
+      - ./:/project:ro
+    depends_on:
+      init-services:
+        condition: service_completed_successfully
+    networks: [devops-net]
+
+networks:
+  devops-net:
+    external: true
+
+volumes:
+  postgres_sonar_data:
+  sonar_data:
+  sonar_logs:
+  sonar_extensions:
+  nexus_data:
+  artifactory_data:
+  jenkins_home:
+  secrets_vol:

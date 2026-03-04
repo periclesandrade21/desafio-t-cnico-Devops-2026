@@ -1,0 +1,163 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haproxy-config
+  namespace: devops-challenge
+data:
+  haproxy.cfg: |
+    global
+      log         stdout format raw local0
+      maxconn     50000
+      tune.ssl.default-dh-param 2048
+
+    defaults
+      mode    http
+      log     global
+      option  httplog
+      option  dontlognull
+      option  forwardfor
+      option  http-server-close
+      timeout connect  5s
+      timeout client  30s
+      timeout server  30s
+      retries 3
+
+    # ── Stats ──────────────────────────────────────────────────────────────
+    frontend stats
+      bind *:8404
+      stats enable
+      stats uri /stats
+      stats refresh 10s
+      stats admin if TRUE
+
+    # ── HTTP → HTTPS Redirect ──────────────────────────────────────────────
+    frontend http-in
+      bind *:80
+      redirect scheme https code 301 if !{ ssl_fc }
+      default_backend app1-backend
+
+    # ── HTTPS Frontend ─────────────────────────────────────────────────────
+    frontend https-in
+      bind *:443
+      mode http
+
+      # Roteamento baseado em path
+      acl path_app1 path_beg /app1
+      acl path_app2 path_beg /app2
+
+      use_backend app1-backend if path_app1
+      use_backend app2-backend if path_app2
+      default_backend app1-backend
+
+    # ── Backend App1 (round-robin com health check) ────────────────────────
+    backend app1-backend
+      balance     roundrobin
+      option      httpchk GET /health
+      http-check  expect status 200
+
+      # Os pods app1 serão resolvidos via DNS K8s
+      server-template app1- 8 app1.devops-challenge.svc.cluster.local:80 \
+        check inter 5s rise 2 fall 3 resolvers k8s_dns resolve-prefer ipv4
+
+    # ── Backend App2 ───────────────────────────────────────────────────────
+    backend app2-backend
+      balance     roundrobin
+      option      httpchk GET /health
+      http-check  expect status 200
+
+      server-template app2- 8 app2.devops-challenge.svc.cluster.local:80 \
+        check inter 5s rise 2 fall 3 resolvers k8s_dns resolve-prefer ipv4
+
+    # ── DNS Resolver K8s ───────────────────────────────────────────────────
+    resolvers k8s_dns
+      nameserver dns1 kube-dns.kube-system.svc.cluster.local:53
+      accepted_payload_size 8192
+      hold valid 5s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haproxy
+  namespace: devops-challenge
+  labels:
+    app: haproxy
+spec:
+  replicas: 2          # 2 réplicas do HAProxy — sem SPOF
+  selector:
+    matchLabels:
+      app: haproxy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: haproxy
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["haproxy"]
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: haproxy
+          image: haproxy:2.9-alpine
+          ports:
+            - containerPort: 80
+              name: http
+            - containerPort: 443
+              name: https
+            - containerPort: 8404
+              name: stats
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/haproxy
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /stats
+              port: 8404
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: haproxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haproxy
+  namespace: devops-challenge
+  labels:
+    app: haproxy
+spec:
+  selector:
+    app: haproxy
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30000
+    - name: https
+      port: 443
+      targetPort: 443
+      nodePort: 30443
+    - name: stats
+      port: 8404
+      targetPort: 8404
+      nodePort: 30404

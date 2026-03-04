@@ -1,0 +1,52 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: devops-challenge
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "DevOps Challenge 2025 — GitOps Project"
+
+  sourceRepos:
+    - '*'   # Em produção, restringir ao repositório específico
+
+  destinations:
+    - namespace: devops-challenge
+      server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+    - namespace: cicd
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: ClusterIssuer
+    - group: '*'
+      kind: ClusterRole
+    - group: '*'
+      kind: ClusterRoleBinding
+    - group: '*'
+      kind: Namespace
+
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+
+  roles:
+    - name: dev
+      description: "Developer — read-only"
+      policies:
+        - p, proj:devops-challenge:dev, applications, get, devops-challenge/*, allow
+      groups:
+        - developers
+
+    - name: ops
+      description: "Ops — sync e deploy"
+      policies:
+        - p, proj:devops-challenge:ops, applications, *, devops-challenge/*, allow
+      groups:
+        - ops-team

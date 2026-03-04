@@ -1,0 +1,110 @@
+---
+# ── ClusterIssuer Self-Signed (dev/local) ─────────────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+# ── CA Certificate (self-signed) ──────────────────────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: devops-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: devops-challenge-ca
+  secretName: devops-ca-secret
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# ── ClusterIssuer usando a CA local ──────────────────────────────────────────
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: local-ca-issuer
+spec:
+  ca:
+    secretName: devops-ca-secret
+---
+# ── Ingress para App1 e App2 ──────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apps-ingress
+  namespace: devops-challenge
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    cert-manager.io/cluster-issuer: "local-ca-issuer"
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # Cache headers adicionados pelo Traefik Middleware
+    traefik.ingress.kubernetes.io/router.middlewares: "devops-challenge-cache-headers@kubernetescrd"
+spec:
+  tls:
+    - hosts:
+        - app1.devops.local
+        - app2.devops.local
+      secretName: apps-tls-secret
+  rules:
+    - host: app1.devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app1
+                port:
+                  number: 80
+    - host: app2.devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app2
+                port:
+                  number: 80
+---
+# ── Ingress ArgoCD ─────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-ingress
+  namespace: argocd
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    traefik.ingress.kubernetes.io/router.entrypoints: "web"
+spec:
+  rules:
+    - host: argocd.devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
+---
+# ── Middleware para cache-control headers ──────────────────────────────────────
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cache-headers
+  namespace: devops-challenge
+spec:
+  headers:
+    customResponseHeaders:
+      X-Cache-Control: "public, max-age=10"
+      X-Powered-By: "DevOps-Challenge-K3s"

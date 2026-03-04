@@ -1,0 +1,14 @@
+{
+  "name": "app2-node",
+  "version": "1.0.0",
+  "description": "DevOps Challenge - App2 Node.js",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "redis": "^4.7.0",
+    "prom-client": "^15.1.3"
+  }
+}
