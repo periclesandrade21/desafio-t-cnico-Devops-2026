@@ -1,4 +1,4 @@
-# DevOps Challenge 2025 🚀
+# DevOps Challenge 2025 
 
 Stack completa com CI/CD, SAST, DAST, repositórios de artefatos e observabilidade — tudo em **um único comando**.
 
@@ -19,7 +19,7 @@ Stack completa com CI/CD, SAST, DAST, repositórios de artefatos e observabilida
 
 ---
 
-## 🚦 Como rodar (um único comando)
+##  Como rodar (um único comando)
 
 ```bash
 # 1. Clonar o repositório
@@ -33,7 +33,7 @@ make git-init
 make all
 ```
 
-> ⏳ SonarQube (~2 min) e Artifactory (~3 min) levam mais tempo para iniciar.
+>  SonarQube (~2 min) e Artifactory (~3 min) levam mais tempo para iniciar.
 > Jenkins só sobe **depois** que todos os serviços estão prontos e configurados.
 
 ### Subir só as apps (sem CI/CD)
@@ -44,7 +44,7 @@ make up
 
 ---
 
-## 🌐 URLs de acesso
+##  URLs de acesso
 
 | Serviço | URL | Credenciais |
 |---------|-----|-------------|
@@ -59,7 +59,7 @@ make up
 
 ---
 
-## 🔁 Ciclo do Pipeline CI/CD
+##  Ciclo do Pipeline CI/CD
 
 ```
 git push → Jenkins detecta → SAST (SonarQube + DepCheck)
@@ -76,7 +76,7 @@ make pipeline
 
 ---
 
-## 🔒 Segurança
+##  Segurança
 
 ### SAST (Static Analysis)
 - **SonarQube**: análise de código Python e Node.js — bugs, code smells, security hotspots
@@ -90,7 +90,7 @@ make pipeline
 
 ---
 
-## 📦 Repositórios de Artefatos
+##  Repositórios de Artefatos
 
 ### Artifactory (Docker Registry)
 - `docker-local` — imagens `app1` e `app2` com tag de build
@@ -104,7 +104,7 @@ make pipeline
 
 ---
 
-## 🗂 Estrutura do projeto
+##  Estrutura do projeto
 
 ```
 devops-challenge-2025/
@@ -150,7 +150,7 @@ devops-challenge-2025/
 
 ---
 
-## 🛑 Parar / Limpar
+##  Parar / Limpar
 
 ```bash
 make down    # Para tudo, mantém volumes
@@ -159,7 +159,7 @@ make clean   # Para tudo e apaga volumes (reset total)
 
 ---
 
-## 💡 Detalhes de Automação
+##  Detalhes de Automação
 
 ### Por que não precisa configurar nada manualmente?
 
@@ -177,7 +177,7 @@ make clean   # Para tudo e apaga volumes (reset total)
 
 ---
 
-## 🔧 Personalização
+##  Personalização
 
 Edite o `.env` para trocar portas ou senhas antes de subir:
 
