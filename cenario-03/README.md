@@ -1,4 +1,4 @@
-# DevOps Challenge 2025 
+# DevOps Challenge 2026 
 
 Stack completa com HTTPS automático, CI/CD, SAST, DAST, repositórios de artefatos, 4 dashboards Grafana e observabilidade — tudo em **um único comando**.
 
