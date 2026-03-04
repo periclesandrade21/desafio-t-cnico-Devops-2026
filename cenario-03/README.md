@@ -1,10 +1,10 @@
-# DevOps Challenge 2025 🚀
+# DevOps Challenge 2025 
 
 Stack completa com HTTPS automático, CI/CD, SAST, DAST, repositórios de artefatos, 4 dashboards Grafana e observabilidade — tudo em **um único comando**.
 
 ---
 
-## 🚦 Como rodar
+##  Como rodar
 
 ```bash
 git clone <repo-url>
@@ -20,7 +20,7 @@ make trust-cert
 
 ---
 
-## 🔒 HTTPS — Automático e sem configuração
+##  HTTPS — Automático e sem configuração
 
 O certificado TLS é gerado automaticamente pelo container `cert-gen` (Alpine + OpenSSL) **antes** do Nginx iniciar:
 
@@ -35,7 +35,7 @@ O HTTP (porta 8080) redireciona automaticamente para HTTPS (porta 8443).
 
 ---
 
-## 🌐 URLs
+##  URLs
 
 | Serviço | HTTP | HTTPS |
 |---------|------|-------|
@@ -48,11 +48,11 @@ O HTTP (porta 8080) redireciona automaticamente para HTTPS (porta 8443).
 | **Grafana** | http://localhost:3001 | — |
 | Prometheus | http://localhost:9090 | — |
 
-> ⚠️ Certificado self-signed: o browser vai mostrar aviso de segurança. Rode `make trust-cert` ou aceite a exceção manualmente.
+>  Certificado self-signed: o browser vai mostrar aviso de segurança. Rode `make trust-cert` ou aceite a exceção manualmente.
 
 ---
 
-## 📊 Dashboards Grafana
+##  Dashboards Grafana
 
 Acesse **http://localhost:3001** (admin / admin). Os 4 dashboards são provisionados automaticamente na pasta **DevOps Challenge 2025**:
 
@@ -65,7 +65,7 @@ Acesse **http://localhost:3001** (admin / admin). Os 4 dashboards são provision
 
 ---
 
-## 🔁 Pipeline CI/CD (Jenkins)
+##  Pipeline CI/CD (Jenkins)
 
 ```
 git push → Checkout → SAST SonarQube (paralelo)
@@ -82,7 +82,7 @@ make pipeline
 
 ---
 
-## 🗂 Estrutura
+##  Estrutura
 
 ```
 devops-challenge-2025/
@@ -119,7 +119,7 @@ devops-challenge-2025/
 
 ---
 
-## 🛑 Parar / Limpar
+##  Parar / Limpar
 
 ```bash
 make down    # para tudo (mantém volumes)
